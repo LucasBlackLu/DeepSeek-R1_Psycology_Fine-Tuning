@@ -3,18 +3,17 @@
 
 # ### Inittial the notebook
 
-# In[ ]:
+# In[1]:
 
 
 import os
 
-# Set wandb API secret token
 os.environ['WANDB_API_KEY'] = 'plz input your token'
 
 
 # ### Install Dependencies 
 
-# In[ ]:
+# In[2]:
 
 
 get_ipython().run_cell_magic('capture', '', '!pip install unsloth\n!pip install --force-reinstall  --upgrade --no-cache-dir --no-deps git+https://github.com/unslothai/unsloth.git\n!pip install wandb\n')
@@ -22,7 +21,7 @@ get_ipython().run_cell_magic('capture', '', '!pip install unsloth\n!pip install 
 
 # ### Load the model 
 
-# In[ ]:
+# In[3]:
 
 
 from unsloth import FastLanguageModel
@@ -48,7 +47,7 @@ model, tokenizer = FastLanguageModel.from_pretrained(
 
 # ### Configure the fine-tuning
 
-# In[ ]:
+# In[4]:
 
 
 model = FastLanguageModel.get_peft_model(
@@ -69,7 +68,7 @@ model = FastLanguageModel.get_peft_model(
 
 # ### Dataset Preparation
 
-# In[ ]:
+# In[5]:
 
 
 from datasets import load_dataset
@@ -114,12 +113,11 @@ def formatting_prompts_func(examples):
     }
 
 # Load the dataset
-dataset = load_dataset("Kedreamix/psychology-10k-Deepseek-R1-zh")
+dataset = load_dataset("Kedreamix/psychology-10k-Deepseek-R1-zh", split="train[0:3000]")
 
-# Get the train, test, and validation splits
-train_dataset = dataset["train"].select(range(0, 500))  # 0-499
-test_dataset = dataset["train"].select(range(500, 625))  # 500-624
-val_dataset = dataset["train"].select(range(625, 750))  # 625-749
+# Split the dataset using datasets' built-in train_test_split method
+train_dataset, temp_dataset = dataset.train_test_split(test_size=0.2, seed=42)values()  # 80% for training, 20% for temp (validation + test)
+val_dataset, test_dataset = temp_dataset.train_test_split(test_size=0.5, seed=42).values()  # Split remaining 20% equally for validation and test
 
 # Apply formatting to the train, test, and validation datasets
 train_dataset = train_dataset.map(formatting_prompts_func, batched=True)
@@ -144,7 +142,7 @@ test_dataset ["text"][0]
 
 # ### Train the model 
 
-# In[ ]:
+# In[6]:
 
 
 from trl import SFTTrainer
@@ -166,7 +164,7 @@ run = wandb.init(
         "learning_rate": 2e-4,
         "architecture": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
         "dataset": "psychology-10k-zh",
-        "epochs": 10,  # Match withnum_train_epochs
+        "epochs": 3,  # Match withnum_train_epochs
         "max_seq_length": max_seq_length,
         "batch_size": 32,      
         "gradient_accumulation": 16,
@@ -185,9 +183,10 @@ trainer = SFTTrainer(
     args = TrainingArguments(
         output_dir = "outputs",
         per_device_train_batch_size = 2, # 2 is enough
-        gradient_accumulation_steps = 8,
+        gradient_accumulation_steps = 16,
         # batch size =  per_device_train_batch_size x  per_device_train_batch_size
-        warmup_steps = 5,
+        #warmup_steps = 5,
+        warmup_ratio= 0.03,
         num_train_epochs = 3, # Set this for 1 full training run.
         #max_steps = 2000,
         learning_rate = 2e-4,
@@ -210,7 +209,7 @@ trainer = SFTTrainer(
 
 # ### Show current memory stats
 
-# In[ ]:
+# In[7]:
 
 
 gpu_stats = torch.cuda.get_device_properties(0)
@@ -222,7 +221,7 @@ print(f"{start_gpu_memory} GB of memory reserved.")
 
 # ### Start Training
 
-# In[ ]:
+# In[8]:
 
 
 trainer_stats = trainer.train()
@@ -234,7 +233,7 @@ wandb.finish()
 
 # ### Import Chinese for matplotlib
 
-# In[ ]:
+# In[9]:
 
 
 import matplotlib
@@ -251,7 +250,7 @@ matplotlib.rc('font', family='Arial Unicode MS')
 
 # ### Display the linear Fit Plot
 
-# In[ ]:
+# In[10]:
 
 
 import numpy as np
@@ -287,7 +286,7 @@ plt.legend()
 plt.show()
 
 
-# In[ ]:
+# In[11]:
 
 
 import numpy as np
@@ -354,7 +353,7 @@ plt.show()
 
 # ### Inference 
 
-# In[ ]:
+# In[12]:
 
 
 # system_prompt = Copied from above
@@ -374,7 +373,7 @@ tokenizer.batch_decode(outputs)
 
 # ### Saving, loading finetuned models
 
-# In[ ]:
+# In[13]:
 
 
 model.save_pretrained("lora_model")  # Local saving
@@ -383,7 +382,7 @@ tokenizer.save_pretrained("lora_model")
 # tokenizer.push_to_hub("your_name/lora_model", token = "...") # Online saving
 
 
-# In[ ]:
+# In[16]:
 
 
 if False:
@@ -409,7 +408,7 @@ inputs = tokenizer(
 
 from transformers import TextStreamer
 text_streamer = TextStreamer(tokenizer)
-_ = model.generate(**inputs, streamer = text_streamer, max_new_tokens = 128)
+_ = model.generate(**inputs, streamer = text_streamer, max_new_tokens = 1024)
 
 
 # ### GGUF / llama.cpp Conversion
@@ -424,7 +423,7 @@ _ = model.generate(**inputs, streamer = text_streamer, max_new_tokens = 128)
 
 # ### Quantizatative and save model
 
-# In[ ]:
+# In[15]:
 
 
 # Save to q4_k_m GGUF
@@ -439,4 +438,10 @@ if False:
         quantization_method = ["q4_k_m", "q8_0", "q5_k_m",],
         token = "", # Get a token at https://huggingface.co/settings/tokens
     )
+
+
+# In[1]:
+
+
+get_ipython().system('jupyter nbconvert --to script deepseek-r1-1.5B.ipynb')
 
